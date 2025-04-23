@@ -4,8 +4,10 @@ load_dotenv()
 import logging
 import ccxt
 import pandas as pd
-import talib
+import pandas_ta as ta  # switched from talib to pandas_ta
 from typing import List
+
+# Note: pandas-ta is used for all technical indicators
 
 def fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> list:
     if limit is None:
@@ -33,6 +35,117 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> list:
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit, params={"recvWindow": 60000})
     return ohlcv
 
+def is_bullish_engulfing(df):
+    # Bullish Engulfing: previous red, current green, current body engulfs previous
+    prev = df.iloc[-2]
+    curr = df.iloc[-1]
+    return (prev['close'] < prev['open'] and curr['close'] > curr['open'] and
+            curr['close'] > prev['open'] and curr['open'] < prev['close'])
+
+def is_bearish_engulfing(df):
+    # Bearish Engulfing: previous green, current red, current body engulfs previous
+    prev = df.iloc[-2]
+    curr = df.iloc[-1]
+    return (prev['close'] > prev['open'] and curr['close'] < curr['open'] and
+            curr['open'] > prev['close'] and curr['close'] < prev['open'])
+
+def is_hammer(df):
+    # Hammer: small body, long lower wick, at bottom of a move
+    curr = df.iloc[-1]
+    body = abs(curr['close'] - curr['open'])
+    lower_wick = curr['open'] - curr['low'] if curr['close'] > curr['open'] else curr['close'] - curr['low']
+    upper_wick = curr['high'] - curr['close'] if curr['close'] > curr['open'] else curr['high'] - curr['open']
+    return (body < (curr['high'] - curr['low']) * 0.3 and lower_wick > body * 2 and upper_wick < body)
+
+def is_doji(df):
+    # Doji: open and close very close
+    curr = df.iloc[-1]
+    return abs(curr['close'] - curr['open']) <= 0.1 * (curr['high'] - curr['low'])
+
+def is_morning_star(df):
+    # Morning Star: red candle, small body, green candle
+    if len(df) < 3:
+        return False
+    prev2, prev1, curr = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    return (
+        prev2['close'] < prev2['open'] and
+        abs(prev1['close'] - prev1['open']) < 0.3 * (prev1['high'] - prev1['low']) and
+        curr['close'] > curr['open'] and
+        curr['close'] > ((prev2['open'] + prev2['close']) / 2)
+    )
+
+def is_evening_star(df):
+    # Evening Star: green candle, small body, red candle
+    if len(df) < 3:
+        return False
+    prev2, prev1, curr = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    return (
+        prev2['close'] > prev2['open'] and
+        abs(prev1['close'] - prev1['open']) < 0.3 * (prev1['high'] - prev1['low']) and
+        curr['close'] < curr['open'] and
+        curr['close'] < ((prev2['open'] + prev2['close']) / 2)
+    )
+
+def is_bullish_harami(df):
+    # Bullish Harami: red candle, then small green inside
+    prev = df.iloc[-2]
+    curr = df.iloc[-1]
+    return (prev['close'] < prev['open'] and curr['close'] > curr['open'] and
+            curr['open'] > prev['close'] and curr['close'] < prev['open'])
+
+def is_bearish_harami(df):
+    # Bearish Harami: green candle, then small red inside
+    prev = df.iloc[-2]
+    curr = df.iloc[-1]
+    return (prev['close'] > prev['open'] and curr['close'] < curr['open'] and
+            curr['close'] > prev['open'] and curr['open'] < prev['close'])
+
+def is_shooting_star(df):
+    # Shooting Star: small body, long upper wick, at top of a move
+    curr = df.iloc[-1]
+    body = abs(curr['close'] - curr['open'])
+    upper_wick = curr['high'] - max(curr['close'], curr['open'])
+    lower_wick = min(curr['close'], curr['open']) - curr['low']
+    return (body < (curr['high'] - curr['low']) * 0.3 and upper_wick > body * 2 and lower_wick < body)
+
+def is_three_white_soldiers(df):
+    # Three White Soldiers: three consecutive green candles
+    if len(df) < 3:
+        return False
+    last3 = df.iloc[-3:]
+    return all(row['close'] > row['open'] for _, row in last3.iterrows())
+
+def is_three_black_crows(df):
+    # Three Black Crows: three consecutive red candles
+    if len(df) < 3:
+        return False
+    last3 = df.iloc[-3:]
+    return all(row['close'] < row['open'] for _, row in last3.iterrows())
+
+def is_three_inside_up(df):
+    # Three Inside Up: red candle, small green inside, next green closes above first open
+    if len(df) < 3:
+        return False
+    prev2, prev1, curr = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    return (
+        prev2['close'] < prev2['open'] and
+        prev1['close'] > prev1['open'] and
+        prev1['open'] > prev2['close'] and prev1['close'] < prev2['open'] and
+        curr['close'] > curr['open'] and curr['close'] > prev2['open']
+    )
+
+def is_three_inside_down(df):
+    # Three Inside Down: green candle, small red inside, next red closes below first open
+    if len(df) < 3:
+        return False
+    prev2, prev1, curr = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    return (
+        prev2['close'] > prev2['open'] and
+        prev1['close'] < prev1['open'] and
+        prev1['close'] > prev2['open'] and prev1['open'] < prev2['close'] and
+        curr['close'] < curr['open'] and curr['close'] < prev2['open']
+    )
+
 def compute_indicators(ohlcv: List[List[float]]) -> dict:
     df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
     close = df['close'].astype(float)
@@ -40,34 +153,34 @@ def compute_indicators(ohlcv: List[List[float]]) -> dict:
     low = df['low'].astype(float)
     volume = df['volume'].astype(float)
     # EMA
-    ema = talib.EMA(close, timeperiod=21).iloc[-1]
+    ema = ta.ema(close, length=21).iloc[-1]
     # SMA
-    sma = talib.SMA(close, timeperiod=21).iloc[-1]
+    sma = ta.sma(close, length=21).iloc[-1]
     # RSI
-    rsi = talib.RSI(close, timeperiod=14).iloc[-1]
+    rsi = ta.rsi(close, length=14).iloc[-1]
     # ATR
-    atr = talib.ATR(high, low, close, timeperiod=14).iloc[-1]
+    atr = ta.atr(high, low, close, length=14).iloc[-1]
     # MACD
-    macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-    macd_val = macd.iloc[-1]
-    macdsignal_val = macdsignal.iloc[-1]
-    macdhist_val = macdhist.iloc[-1]
+    macd_df = ta.macd(close, fast=12, slow=26, signal=9)
+    macd_val = macd_df['MACD_12_26_9'].iloc[-1]
+    macdsignal_val = macd_df['MACDs_12_26_9'].iloc[-1]
+    macdhist_val = macd_df['MACDh_12_26_9'].iloc[-1]
     # Bollinger Bands
-    upper, middle, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-    bb_upper = upper.iloc[-1]
-    bb_middle = middle.iloc[-1]
-    bb_lower = lower.iloc[-1]
+    bb_df = ta.bbands(close, length=20, std=2)
+    bb_upper = bb_df['BBU_20_2.0'].iloc[-1]
+    bb_middle = bb_df['BBM_20_2.0'].iloc[-1]
+    bb_lower = bb_df['BBL_20_2.0'].iloc[-1]
     # Stochastic Oscillator
-    slowk, slowd = talib.STOCH(high, low, close)
-    stoch_k = slowk.iloc[-1]
-    stoch_d = slowd.iloc[-1]
+    stoch_df = ta.stoch(high, low, close)
+    stoch_k = stoch_df['STOCHk_14_3_3'].iloc[-1]
+    stoch_d = stoch_df['STOCHd_14_3_3'].iloc[-1]
     # ADX
-    adx = talib.ADX(high, low, close, timeperiod=14).iloc[-1]
+    adx = ta.adx(high, low, close, length=14)['ADX_14'].iloc[-1]
     # CCI
-    cci = talib.CCI(high, low, close, timeperiod=20).iloc[-1]
+    cci = ta.cci(high, low, close, length=20).iloc[-1]
     # OBV
-    obv = talib.OBV(close, volume).iloc[-1]
-    # VWAP (manual, as TA-Lib does not have VWAP)
+    obv = ta.obv(close, volume).iloc[-1]
+    # VWAP (manual, as pandas-ta does not have VWAP)
     typical_price = (high + low + close) / 3
     vwap = (typical_price * volume).sum() / volume.sum() if volume.sum() != 0 else float('nan')
     # Simple momentum logic: price above EMA and RSI > 55 = bullish, below/RSI < 45 = bearish
@@ -79,11 +192,11 @@ def compute_indicators(ohlcv: List[List[float]]) -> dict:
         momentum = 'neutral'
 
     # Fast/Slow EMA for cross
-    ema_fast = talib.EMA(close, timeperiod=8).iloc[-1]
-    ema_slow = talib.EMA(close, timeperiod=21).iloc[-1]
+    ema_fast = ta.ema(close, length=8).iloc[-1]
+    ema_slow = ta.ema(close, length=21).iloc[-1]
     if close.size > 1:
-        ema_fast_prev = talib.EMA(close, timeperiod=8).iloc[-2]
-        ema_slow_prev = talib.EMA(close, timeperiod=21).iloc[-2]
+        ema_fast_prev = ta.ema(close, length=8).iloc[-2]
+        ema_slow_prev = ta.ema(close, length=21).iloc[-2]
         if ema_fast_prev < ema_slow_prev and ema_fast > ema_slow:
             ema_cross = "bullish"
         elif ema_fast_prev > ema_slow_prev and ema_fast < ema_slow:
@@ -109,35 +222,42 @@ def compute_indicators(ohlcv: List[List[float]]) -> dict:
     bb_width = float(bb_upper - bb_lower)
 
     # OBV/ADX slopes
-    obv_hist = talib.OBV(close, volume)
+    obv_hist = ta.obv(close, volume)
     obv_slope = float(obv_hist.iloc[-1] - obv_hist.iloc[-2]) if obv_hist.size > 1 else float('nan')
-    adx_hist = talib.ADX(high, low, close, timeperiod=14)
+    adx_hist = ta.adx(high, low, close, length=14)['ADX_14']
     adx_slope = float(adx_hist.iloc[-1] - adx_hist.iloc[-2]) if adx_hist.size > 1 else float('nan')
 
-    # Advanced candle pattern detection using TA-Lib
-    pattern_funcs = {
-        'engulfing': talib.CDLENGULFING,
-        'hammer': talib.CDLHAMMER,
-        'doji': talib.CDLDOJI,
-        'morning_star': talib.CDLMORNINGSTAR,
-        'evening_star': talib.CDLEVENINGSTAR,
-        'harami': talib.CDLHARAMI,
-        'shooting_star': talib.CDLSHOOTINGSTAR,
-        'three_white_soldiers': talib.CDL3WHITESOLDIERS,
-        'three_black_crows': talib.CDL3BLACKCROWS,
-        'three_inside': talib.CDL3INSIDE
-    }
+    # Manual candle pattern detection
     detected_patterns = []
-    for name, func in pattern_funcs.items():
-        # Some TA-Lib patterns need all 4 OHLC, some only 3, but all accept 4
-        try:
-            val = func(df['open'], high, low, close).iloc[-1]
-            if val > 0:
-                detected_patterns.append(f"bullish_{name}")
-            elif val < 0:
-                detected_patterns.append(f"bearish_{name}")
-        except Exception:
-            continue
+    # Engulfing
+    if len(df) > 1:
+        if is_bullish_engulfing(df):
+            detected_patterns.append('bullish_engulfing')
+        if is_bearish_engulfing(df):
+            detected_patterns.append('bearish_engulfing')
+        if is_hammer(df):
+            detected_patterns.append('hammer')
+        if is_doji(df):
+            detected_patterns.append('doji')
+        if is_bullish_harami(df):
+            detected_patterns.append('bullish_harami')
+        if is_bearish_harami(df):
+            detected_patterns.append('bearish_harami')
+        if is_shooting_star(df):
+            detected_patterns.append('shooting_star')
+    if len(df) > 2:
+        if is_morning_star(df):
+            detected_patterns.append('morning_star')
+        if is_evening_star(df):
+            detected_patterns.append('evening_star')
+        if is_three_white_soldiers(df):
+            detected_patterns.append('three_white_soldiers')
+        if is_three_black_crows(df):
+            detected_patterns.append('three_black_crows')
+        if is_three_inside_up(df):
+            detected_patterns.append('three_inside_up')
+        if is_three_inside_down(df):
+            detected_patterns.append('three_inside_down')
     candle_pattern = detected_patterns if detected_patterns else None
 
     # Price near BB upper
