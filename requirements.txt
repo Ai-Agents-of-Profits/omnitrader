@@ -2,6 +2,7 @@ ccxt
 python-dotenv
 psycopg2-binary
 schedule
-TA-Lib
+numpy==1.26.4
+pandas-ta
 pandas
 openai-agents
