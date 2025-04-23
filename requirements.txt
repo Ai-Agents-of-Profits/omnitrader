@@ -2,7 +2,7 @@ ccxt
 python-dotenv
 psycopg2-binary
 schedule
-talib-binary
+TA-Lib
 pandas
 openai-agents
 logging
