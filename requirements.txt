@@ -5,5 +5,3 @@ schedule
 TA-Lib
 pandas
 openai-agents
-logging
-asyncio
