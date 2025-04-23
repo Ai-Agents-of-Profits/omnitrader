@@ -1,0 +1,9 @@
+ccxt
+python-dotenv
+psycopg2-binary
+schedule
+talib-binary
+pandas
+openai-agents
+logging
+asyncio

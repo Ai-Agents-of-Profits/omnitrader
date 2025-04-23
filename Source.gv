@@ -1,0 +1,11 @@
+
+    digraph G {
+        graph [splines=true];
+        node [fontname="Arial"];
+        edge [penwidth=1.5];
+    "__start__" [label="__start__", shape=ellipse, style=filled, fillcolor=lightblue, width=0.5, height=0.3];"__end__" [label="__end__", shape=ellipse, style=filled, fillcolor=lightblue, width=0.5, height=0.3];"TradeDecisionAgent" [label="TradeDecisionAgent", shape=box, style=filled, fillcolor=lightyellow, width=1.5, height=0.8];"TechnicalAnalyst" [label="TechnicalAnalyst", shape=box, style=filled, style=rounded, fillcolor=lightyellow, width=1.5, height=0.8];"__start__" [label="__start__", shape=ellipse, style=filled, fillcolor=lightblue, width=0.5, height=0.3];"__end__" [label="__end__", shape=ellipse, style=filled, fillcolor=lightblue, width=0.5, height=0.3];"TechnicalAnalyst" [label="TechnicalAnalyst", shape=box, style=filled, fillcolor=lightyellow, width=1.5, height=0.8];"get_latest_indicators" [label="get_latest_indicators", shape=ellipse, style=filled, fillcolor=lightgreen, width=0.5, height=0.3];"execute_trade" [label="execute_trade", shape=ellipse, style=filled, fillcolor=lightgreen, width=0.5, height=0.3];"__start__" -> "TradeDecisionAgent";
+            "TradeDecisionAgent" -> "TechnicalAnalyst";
+        "TechnicalAnalyst" -> "get_latest_indicators" [style=dotted, penwidth=1.5];
+        "get_latest_indicators" -> "TechnicalAnalyst" [style=dotted, penwidth=1.5];
+        "TechnicalAnalyst" -> "execute_trade" [style=dotted, penwidth=1.5];
+        "execute_trade" -> "TechnicalAnalyst" [style=dotted, penwidth=1.5];"TechnicalAnalyst" -> "__end__";}
